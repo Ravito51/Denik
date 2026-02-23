@@ -1,0 +1,35 @@
+{
+  "name": "RAVITO \u2013 Pracovn\u00ed den\u00edk",
+  "short_name": "RAVITO",
+  "description": "Evidence pr\u00e1ce, zak\u00e1zek a faktur (offline PWA).",
+  "start_url": "/Denik/",
+  "scope": "/Denik/",
+  "display": "standalone",
+  "background_color": "#0f0f10",
+  "theme_color": "#111111",
+  "lang": "cs",
+  "icons": [
+    {
+      "src": "/Denik/assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/Denik/assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/Denik/assets/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/Denik/assets/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
