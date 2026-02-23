@@ -1,6 +1,6 @@
 // RAVITO Worklog PWA - simple offline cache
-// Build: v2-paid-1 (based on stable v2)
-const CACHE = "ravito-worklog-v2-paid3"; // bump to force update
+// Build: v2-paid7-settingsfix
+const CACHE = "ravito-worklog-v2-paid7"; // bump to force update
 const ASSETS = [
   "./",
   "./index.html",
