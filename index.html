@@ -1,10 +1,8 @@
-
-    try{ document.getElementById("verLabel").textContent = " ("+APP_VERSION+")"; }catch(e){}
-
-    window.__pdfMode = null; window.__paidPdfRange = null;
 <!doctype html>
 <html lang="cs">
 <head>
+  <meta name="google" content="notranslate">
+  <meta name="googlebot" content="notranslate">
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>RAVITO – Pracovní deník</title>
@@ -147,7 +145,7 @@
           <button onclick="setFilterRange()">Od–Do</button>
 
           <button onclick="openPaidModal()">Zaplaceno</button>
-          <button class="primary" onclick="openUnpaidPDFMenu()">PDF</button>
+          <button class="primary" onclick="openPDFMenu()">PDF</button>
         </div>
 
         <small class="hint">Dole se automaticky zobrazuje <b>dnešek</b>. Tlačítko <b>Měsíc</b> nastaví Od–Do na celý vybraný měsíc.</small>
@@ -563,7 +561,7 @@
           });
         }
       } catch(e){}
-+ '</div>';
+'</div>';
     } else {
       jobSumEl.innerHTML = "";
     }
@@ -792,20 +790,12 @@
   };
 
   // ===== PDF menu =====
-  
-window.openUnpaidPDFMenu = function(){
-    // default PDF = nezaplacené (běžný výpis)
-    window.__pdfMode = null;
-    window.__paidPdfRange = null;
-    openPDFMenu();
-  };
   window.openPDFMenu = function() {
     document.getElementById("pdfBackdrop").style.display = "flex";
   };
   window.closePDFMenu = function(ev) {
     if (ev && ev.target && ev.target.id === "pdfBackdrop") {
       document.getElementById("pdfBackdrop").style.display = "none";
-    window.__pdfMode = null; window.__paidPdfRange = null;
       return;
     }
     document.getElementById("pdfBackdrop").style.display = "none";
@@ -956,8 +946,38 @@ window.openUnpaidPDFMenu = function(){
       +   "<h1>VÝKAZ PRÁCE</h1>"
       +   "<p class='meta'>Období: <b>" + esc(periodText()) + "</b></p>"
       + "</div>"
-      + buildPDFByJob()
-      + "</body></html>";
+      + (window.__pdfMode==="job_single" && window.__jobPdfName ? buildPDFBySingleJob() : buildPDFByJob())
+      + "
+</div>
+
+  <!-- Job PDF modal -->
+  <div class="modal-backdrop" id="jobPdfBackdrop" onclick="closeJobPdfModal(event)" style="display:none;">
+    <div class="modal">
+      <h3>Zakázka PDF (napříč měsíci)</h3>
+      <div class="row" style="gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <label for="jobPdfSelect">Zakázka</label>
+          <select id="jobPdfSelect" class="input"></select>
+        </div>
+        <div style="min-width:160px;">
+          <label for="jobPdfPaid">Filtr</label>
+          <select id="jobPdfPaid" class="input">
+            <option value="all">Vše</option>
+            <option value="unpaid">Nezaplacené</option>
+            <option value="paid">Zaplacené</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:10px;margin-top:14px;">
+        <button class="btn ghost" onclick="closeJobPdfModal()">Zavřít</button>
+        <button class="btn" onclick="printJobPdf()">Vytvořit PDF</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Tip: vybere všechny záznamy dané zakázky bez ohledu na měsíc.</p>
+    </div>
+  </div>
+
+  <!-- Entry actions modal -->
+</body></html>";
 
     w.document.open();
     w.document.write(doc);
@@ -1076,7 +1096,177 @@ window.openUnpaidPDFMenu = function(){
     render();
   });
 
+
+
+  // ===== Job PDF (single job across all months) =====
+  window.__jobPdfName = null;
+  window.__jobPdfPaid = "all"; // all | unpaid | paid
+
+  function getAllJobsFromEntries(entries){
+    var set = {};
+    for (var i=0;i<entries.length;i++){
+      var j = (entries[i].job || "").trim();
+      if (j) set[j]=true;
+    }
+    return Object.keys(set).sort(function(a,b){ return a.localeCompare(b,'cs',{sensitivity:'base'}); });
+  }
+
+  window.openJobPdfModal = function(){
+    try{
+      var entries = loadEntries();
+      var jobs = getAllJobsFromEntries(entries);
+      var sel = document.getElementById("jobPdfSelect");
+      sel.innerHTML = "";
+      jobs.forEach(function(j){
+        var opt=document.createElement("option");
+        opt.value=j; opt.textContent=j;
+        sel.appendChild(opt);
+      });
+      // preselect current job input if present
+      var currentJob = (document.getElementById("job").value || "").trim();
+      if (currentJob){
+        for (var k=0;k<sel.options.length;k++){
+          if (sel.options[k].value === currentJob){ sel.selectedIndex=k; break; }
+        }
+      }
+      document.getElementById("jobPdfPaid").value = "all";
+      document.getElementById("jobPdfBackdrop").style.display = "flex";
+    }catch(e){
+      alert("Nelze otevřít Zakázka PDF: " + (e && e.message ? e.message : e));
+    }
+  };
+
+  window.closeJobPdfModal = function(ev){
+    if (ev && ev.target && ev.target.id === "jobPdfBackdrop"){
+      document.getElementById("jobPdfBackdrop").style.display = "none";
+      return;
+    }
+    var bd=document.getElementById("jobPdfBackdrop");
+    if (bd) bd.style.display="none";
+  };
+
+  function entryPaidFlag(e){
+    // paid info: uses e.paid === true or paidAt set, keep compatible
+    return !!(e && (e.paid === true || e.paidAt));
+  }
+
+  function filterEntriesForJobPdf(entries, jobName, paidMode){
+    var out=[];
+    for (var i=0;i<entries.length;i++){
+      var e=entries[i];
+      if (!e) continue;
+      if (((e.job||"").trim()) !== jobName) continue;
+      var isPaid = entryPaidFlag(e);
+      if (paidMode === "paid" && !isPaid) continue;
+      if (paidMode === "unpaid" && isPaid) continue;
+      out.push(e);
+    }
+    // sort by date+from
+    out.sort(function(a,b){
+      var da=(a.date||""); var db=(b.date||"");
+      if (da<db) return -1; if (da>db) return 1;
+      var fa=(a.from||""); var fb=(b.from||"");
+      if (fa<fb) return -1; if (fa>fb) return 1;
+      return 0;
+    });
+    return out;
+  }
+
+  function sumJobPdf(entries){
+    var totalMin=0, totalMoney=0;
+    for (var i=0;i<entries.length;i++){
+      var e=entries[i];
+      totalMin += (e.minutes||0);
+      totalMoney += (e.money||0);
+    }
+    return { totalMin: totalMin, totalMoney: totalMoney };
+  }
+
+  function buildPDFBySingleJob(){
+    var job = window.__jobPdfName;
+    var paidMode = window.__jobPdfPaid || "all";
+    if (!job) return "<p>Chybí zakázka.</p>";
+    var entries = filterEntriesForJobPdf(loadEntries(), job, paidMode);
+    if (!entries.length){
+      return "<p>Žádné záznamy pro zakázku: <b>"+esc(job)+"</b>.</p>";
+    }
+
+    var sums = sumJobPdf(entries);
+    var html = "";
+    html += "<div class='jobblock'>";
+    html += "<h2>Zakázka: "+esc(job)+"</h2>";
+    html += "<p class='meta'>Filtr: <b>"+(paidMode==="paid"?"Zaplacené":(paidMode==="unpaid"?"Nezaplacené":"Vše"))+"</b></p>";
+    html += "<table><thead><tr><th>Datum</th><th>Čas</th><th>Popis</th><th>Hodin</th><th>Částka</th></tr></thead><tbody>";
+
+    for (var i=0;i<entries.length;i++){
+      var e=entries[i];
+      var h = (e.minutes||0)/60;
+      html += "<tr>";
+      html += "<td>"+esc(fmtDateCZ(e.date))+"</td>";
+      html += "<td>"+esc((e.from||"")+"–"+(e.to||""))+"</td>";
+      html += "<td>"+esc(e.desc||"")+"</td>";
+      html += "<td style='text-align:right'>"+esc(fmtHours(h))+"</td>";
+      html += "<td style='text-align:right'>"+esc(fmtMoney(e.money||0))+"</td>";
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    html += "<div class='subtotal'><b>Součet:</b> "+esc(fmtHours(sums.totalMin/60))+" hodin, "+esc(fmtMoney(sums.totalMoney))+"</div>";
+    html += "</div>";
+    return html;
+  }
+
+  window.printJobPdf = function(){
+    try{
+      var sel = document.getElementById("jobPdfSelect");
+      var job = sel && sel.value ? sel.value : "";
+      if (!job){ alert("Vyber zakázku."); return; }
+      window.__jobPdfName = job;
+      window.__jobPdfPaid = document.getElementById("jobPdfPaid").value || "all";
+      // we reuse existing PDF print but with special mode
+      window.__pdfMode = "job_single";
+      closeJobPdfModal();
+      openPDFMenu(); // shows preview menu
+      // directly print
+      printPDF();
+    }catch(e){
+      alert("Chyba při tvorbě PDF zakázky: " + (e && e.message ? e.message : e));
+    }finally{
+      // reset so next normal PDF works
+      setTimeout(function(){ window.__pdfMode=null; window.__jobPdfName=null; window.__jobPdfPaid="all"; }, 500);
+    }
+  };
+
 })();
 </script>
+
+</div>
+
+  <!-- Job PDF modal -->
+  <div class="modal-backdrop" id="jobPdfBackdrop" onclick="closeJobPdfModal(event)" style="display:none;">
+    <div class="modal">
+      <h3>Zakázka PDF (napříč měsíci)</h3>
+      <div class="row" style="gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <label for="jobPdfSelect">Zakázka</label>
+          <select id="jobPdfSelect" class="input"></select>
+        </div>
+        <div style="min-width:160px;">
+          <label for="jobPdfPaid">Filtr</label>
+          <select id="jobPdfPaid" class="input">
+            <option value="all">Vše</option>
+            <option value="unpaid">Nezaplacené</option>
+            <option value="paid">Zaplacené</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:10px;margin-top:14px;">
+        <button class="btn ghost" onclick="closeJobPdfModal()">Zavřít</button>
+        <button class="btn" onclick="printJobPdf()">Vytvořit PDF</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Tip: vybere všechny záznamy dané zakázky bez ohledu na měsíc.</p>
+    </div>
+  </div>
+
+  <!-- Entry actions modal -->
 </body>
 </html>
